@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מנהל הוצאות ותקציב - תומך MAX, Cal, Isracard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap');
+        body { font-family: 'Assistant', sans-serif; }
+        .tab-active { border-bottom: 3px solid #2563eb; color: #2563eb; font-weight: bold; }
+        .table-scroll-container { max-height: 500px; overflow-y: auto; position: relative; }
+        .table-scroll-container thead { position: sticky; top: 0; z-index: 10; background-color: #f3f4f6; }
+        .blur-content { filter: blur(8px); pointer-events: none; user-select: none; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen pb-10">
+
+    <div id="main-app-container" class="max-w-7xl mx-auto py-8 px-4 blur-content">
+        
+        <header class="bg-white p-6 rounded-2xl shadow-sm mb-6 border-b-4 border-blue-600 flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">מנהל הוצאות אישי</h1>
+                <p class="text-gray-500">מעקב תקציב וניתוח קבצי אקסל (תומך בכל סוגי הכרטיסים)</p>
+            </div>
+            <button onclick="document.getElementById('excel-files').click()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition font-bold shadow-lg flex items-center gap-2">
+                <span>📂</span> טען קבצי אקסל
+            </button>
+            <input type="file" id="excel-files" multiple accept=".xlsx, .xls" class="hidden"/>
+        </header>
+
+        <div id="dashboard-area" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 hidden">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-center items-center text-center">
+                <h3 class="text-gray-500 font-bold mb-2">סה"כ הוצאות חודשי</h3>
+                <p id="total-sum-display" class="text-4xl font-black text-red-600 mb-2">0 ₪</p>
+                <div class="text-xs text-gray-400 font-bold space-y-1">
+                    <p id="total-rows-display">0 עסקאות אקסל</p>
+                    <p id="total-fixed-display">0 הוצאות קבועות</p>
+                </div>
+            </div>
+            <div class="md:col-span-2 bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center justify-center">
+                <div style="height: 250px; width: 100%; max-width: 500px;">
+                    <canvas id="expensesChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex border-b border-gray-200 mb-0 bg-white rounded-t-lg px-4 gap-2 flex-wrap">
+            <button onclick="switchTab('transactions')" id="tab-btn-transactions" class="py-4 px-6 tab-active transition">תנועות וסיכום</button>
+            <button onclick="switchTab('budget')" id="tab-btn-budget" class="py-4 px-6 text-gray-500 transition">🎯 עמידה ביעדים</button>
+            <button onclick="switchTab('fixed')" id="tab-btn-fixed" class="py-4 px-6 text-gray-500 transition">ניהול הוצאות קבועות</button>
+            <button onclick="switchTab('merchants')" id="tab-btn-merchants" class="py-4 px-6 text-gray-500 transition">ניהול קטגוריות</button>
+        </div>
+
+        <div id="tab-transactions" class="bg-white rounded-b-xl shadow-sm border border-gray-200 p-0 overflow-hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-4 divide-x divide-x-reverse divide-gray-200">
+                <div class="lg:col-span-3">
+                    <div class="table-scroll-container">
+                        <table class="w-full text-center border-collapse text-sm">
+                            <thead>
+                                <tr class="text-gray-600 border-b bg-gray-50">
+                                    <th class="p-4">תאריך</th>
+                                    <th class="p-4">בית עסק</th>
+                                    <th class="p-4">קטגוריה</th>
+                                    <th class="p-4 text-left">סכום</th>
+                                    <th class="p-4">פעולות</th>
+                                </tr>
+                            </thead>
+                            <tbody id="data-table" class="divide-y divide-gray-100 text-gray-700">
+                                <tr id="guide-row">
+                                    <td colspan="5" class="p-8">
+                                        <div class="max-w-xl mx-auto bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-8 text-right shadow-inner">
+                                            <div class="flex items-center gap-3 mb-6">
+                                                <div class="bg-blue-600 text-white rounded-xl p-2 flex-shrink-0">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                                </div>
+                                                <div>
+                                                    <h3 class="text-lg font-bold text-gray-800">איך מתחילים?</h3>
+                                                    <p class="text-xs text-gray-500">שלושה צעדים פשוטים להתחלה</p>
+                                                </div>
+                                            </div>
+
+                                            <div class="space-y-4 mb-6">
+                                                <div class="flex items-start gap-4">
+                                                    <div class="bg-blue-600 text-white font-black text-sm rounded-full w-7 h-7 flex items-center justify-center flex-shrink-0 mt-0.5">1</div>
+                                                    <div>
+                                                        <p class="font-bold text-gray-800 text-sm">התחבר לאתר כרטיס האשראי שלך</p>
+                                                        <p class="text-xs text-gray-500 mt-0.5">נכנס לאתר <span class="font-semibold text-blue-700">MAX</span>, <span class="font-semibold text-blue-700">Cal</span> או <span class="font-semibold text-blue-700">Isracard</span> עם פרטי הכניסה שלך</p>
+                                                    </div>
+                                                </div>
+                                                <div class="flex items-start gap-4">
+                                                    <div class="bg-blue-600 text-white font-black text-sm rounded-full w-7 h-7 flex items-center justify-center flex-shrink-0 mt-0.5">2</div>
+                                                    <div>
+                                                        <p class="font-bold text-gray-800 text-sm">הורד דף חשבון אקסל (XLSX)</p>
+                                                        <p class="text-xs text-gray-500 mt-0.5">מצא את אפשרות "ייצוא לאקסל" או "הורדת דף חשבון" ושמור את הקובץ למחשב</p>
+                                                    </div>
+                                                </div>
+                                                <div class="flex items-start gap-4">
+                                                    <div class="bg-indigo-600 text-white font-black text-sm rounded-full w-7 h-7 flex items-center justify-center flex-shrink-0 mt-0.5">3</div>
+                                                    <div>
+                                                        <p class="font-bold text-gray-800 text-sm">לחץ על "טען קבצי אקסל" למעלה</p>
+                                                        <p class="text-xs text-gray-500 mt-0.5">בחר קובץ אחד או יותר — הנתונים יטענו אוטומטית לטבלה</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div class="bg-white border border-green-200 rounded-xl px-4 py-3 flex items-center gap-3">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+                                                <p class="text-xs text-green-800"><span class="font-bold">פרטיות מלאה — </span>הנתונים שלך נשארים במחשב שלך בלבד ואינם נשלחים לשום שרת</p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="lg:col-span-1 bg-slate-50/50 p-4">
+                    <h3 class="font-bold text-gray-700 mb-4 border-b pb-2">הוצאות קבועות</h3>
+                    <div id="sidebar-fixed-list" class="space-y-2 text-xs"></div>
+                </div>
+            </div>
+
+            <div class="border-t-4 border-gray-100 p-8 bg-gray-50/30">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">📊 סיכום תקציב מול ביצוע (כל הקטגוריות)</h3>
+                <div class="overflow-x-auto rounded-lg border bg-white">
+                    <table class="w-full text-center text-sm">
+                        <thead class="bg-gray-100 font-bold">
+                            <tr>
+                                <th class="p-4">קטגוריה</th>
+                                <th class="p-4">תקציב יעד</th>
+                                <th class="p-4">ביצוע בפועל</th>
+                                <th class="p-4">הפרש</th>
+                                <th class="p-4 w-1/4">סטטוס</th>
+                            </tr>
+                        </thead>
+                        <tbody id="budget-summary-table" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-budget" class="hidden bg-white p-8 rounded-b-xl shadow-sm border border-gray-200">
+            <div id="budget-inputs-container" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
+            <div class="mt-8 text-center">
+                <button onclick="saveBudgets()" class="bg-blue-600 text-white font-bold py-3 px-12 rounded-lg hover:bg-blue-700">שמור יעדים</button>
+            </div>
+        </div>
+
+        <div id="tab-fixed" class="hidden bg-white p-8 rounded-b-xl shadow-sm border border-gray-200">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div class="bg-gray-50 p-6 rounded-xl border space-y-4">
+                    <input type="text" id="fixed-name" placeholder="שם ההוצאה" class="w-full p-2 border rounded">
+                    <input type="number" id="fixed-amount" placeholder="סכום ₪" class="w-full p-2 border rounded">
+                    <select id="fixed-category" class="w-full p-2 border rounded bg-white"></select>
+                    <button onclick="addFixedExpense()" class="w-full bg-green-600 text-white font-bold py-2 rounded">הוסף</button>
+                </div>
+                <div class="md:col-span-2">
+                    <table class="w-full text-center text-sm border">
+                        <thead class="bg-gray-100"><tr><th>שם</th><th>קטגוריה</th><th>סכום</th><th>מחק</th></tr></thead>
+                        <tbody id="fixed-management-list"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-merchants" class="hidden bg-white p-6 rounded-b-xl shadow-sm border border-gray-200">
+            <table class="w-full text-center border-collapse">
+                <thead class="bg-slate-50 border-b"><tr><th>בית עסק</th><th>קטגוריה</th><th>פעולה</th></tr></thead>
+                <tbody id="merchants-list"></tbody>
+            </table>
+        </div>
+
+    </div>
+
+    <div id="activation-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" dir="rtl">
+            <div class="bg-gradient-to-l from-blue-700 to-indigo-600 px-8 py-6 text-white text-right">
+                <div class="flex items-center gap-3 mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-yellow-300 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+                    <h2 class="text-xl font-black">הפעלת מערכת SmartFinance 💰</h2>
+                </div>
+                <p class="text-blue-100 text-sm">הכניסו מפתח גישה כדי לפתוח את מנהל ההוצאות</p>
+            </div>
+
+            <div class="px-8 py-6 text-right">
+                <ul class="space-y-2 mb-6">
+                    <li class="flex items-center gap-2 text-sm text-gray-700"><span class="text-blue-500">📊</span> ניתוח תנועות אוטומטי מ-MAX, כאל וישראכרט</li>
+                    <li class="flex items-center gap-2 text-sm text-gray-700"><span class="text-blue-500">🎯</span> מעקב יעדי תקציב וחלוקה לקטגוריות</li>
+                    <li class="flex items-center gap-2 text-sm text-gray-700"><span class="text-blue-500">🔒</span> 100% פרטי לוקאלי — המידע לא יוצא מהדפדפן שלכם</li>
+                </ul>
+
+                <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5 text-center">
+                    <p class="text-sm font-bold text-gray-800 mb-1">רכישת מפתח גישה קבוע · ₪49 בלבד</p>
+                    <p class="text-xs text-gray-500 mb-3">תשלום חד-פעמי ומאובטח ב-PayBox / Bit ומקבלים מפתח מיידית</p>
+                    <a href="https://payboxapp.page.link/YOUR_LINK" id="paybox-link" target="_blank"
+                       class="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-8 rounded-lg text-sm transition shadow-md">
+                        💳 לתשלום מהיר ב־PayBox / Bit
+                    </a>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-xs font-bold text-gray-600">הזינו את מפתח הגישה שלכם:</label>
+                    <div class="flex gap-2">
+                        <input id="license-key-input" type="text" placeholder="הכנס קוד כאן (אותיות ומספרים)"
+                               class="flex-1 border border-gray-300 rounded-lg p-2.5 text-sm text-center font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent uppercase"
+                               onkeydown="if(event.key==='Enter') triggerLicenseCheck()" />
+                        <button onclick="triggerLicenseCheck()"
+                                class="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2.5 rounded-lg text-sm transition flex-shrink-0">
+                            הפעל
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-400 text-center">המפתח מורכב מאותיות באנגלית (A-Z) ומספרים</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="category-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-xl w-96 text-center">
+            <h3 class="text-xl font-bold mb-4">שיוך עסק לקטגוריה</h3>
+            <input type="text" id="cat-merchant-name" class="w-full p-2 border rounded bg-gray-100 mb-4 text-center font-bold" readonly />
+            <select id="cat-selection" class="w-full p-3 border rounded-lg mb-4 text-center"></select>
+            <div class="flex gap-3">
+                <button onclick="saveMerchantMapping()" class="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold">שמור</button>
+                <button onclick="closeModal()" class="flex-1 bg-gray-200 py-2 rounded-lg font-bold">ביטול</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ALL_CATEGORIES = [
+            "מזון וסופר", "פנאי ובילוים", "קניות וביגוד", "תחזוקת הבית / שכ''ד",
+            "תחבורה ורכב", "בריאות", "פארם", "ביטוחים", "חינוך", "הלוואות", "עמלות", "חשבונות", "אחר"
+        ];
+        
+        // מפתח סודי מטרה
+        const TARGET_VALUE = 13091999;
+
+        let isRegistered = localStorage.getItem('sf_registered') === 'true';
+        let merchantsMapping = JSON.parse(localStorage.getItem('merchants_json')) || {};
+        let fixedExpenses = JSON.parse(localStorage.getItem('fixed_expenses_json')) || [];
+        let budgetLimits = JSON.parse(localStorage.getItem('budget_limits_json')) || {};
+        let currentLoadedData = [];
+        let chartInstance = null;
+
+        function init() {
+            const options = ALL_CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
+            document.getElementById('fixed-category').innerHTML = options;
+            document.getElementById('cat-selection').innerHTML = options;
+            renderBudgetInputs();
+            renderFixedExpensesTable();
+            renderSidebarFixedList();
+            updateDashboard();
+            renderBudgetSummaryTable();
+
+            // בדיקת סטטוס רישום ועדכון הממשק בהתאם
+            applyRegistrationState();
+        }
+
+        function applyRegistrationState() {
+            const appContainer = document.getElementById('main-app-container');
+            const modal = document.getElementById('activation-modal');
+            
+            if (isRegistered) {
+                appContainer.classList.remove('blur-content');
+                modal.style.display = 'none';
+                modal.classList.add('hidden');
+            } else {
+                appContainer.classList.add('blur-content');
+                modal.style.display = 'flex';
+                modal.classList.remove('hidden');
+            }
+        }
+
+        function switchTab(tab) {
+            if (!isRegistered) return; // הגנה נוספת
+            ['transactions', 'merchants', 'fixed', 'budget'].forEach(t => {
+                document.getElementById(`tab-${t}`).classList.add('hidden');
+                document.getElementById(`tab-btn-${t}`).className = 'py-4 px-6 text-gray-500 transition';
+            });
+            document.getElementById(`tab-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-btn-${tab}`).className = 'py-4 px-6 tab-active transition';
+            if (tab === 'merchants') renderMerchantsList();
+            if (tab === 'transactions') { renderTransactions(); renderBudgetSummaryTable(); }
+        }
+
+        // --- מנגנון הגימטריה והפיענוח המתמטי של מפתח הגישה ---
+        function calculateKeyHash(str) {
+            let cleanStr = str.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            let totalValue = 0;
+            
+            for (let i = 0; i < cleanStr.length; i++) {
+                let char = cleanStr[i];
+                let charCode = cleanStr.charCodeAt(i);
+                
+                if (charCode >= 48 && charCode <= 57) {
+                    // אם זה מספר (0-9) - נוסיף את הערך שלו מוכפל במיקום שלו פלוס 1 כדי ליצור ייחודיות למבנה הקוד
+                    totalValue += parseInt(char) * (i + 1) * 791;
+                } else if (charCode >= 65 && charCode <= 90) {
+                    // אם זו אות באנגלית (A=1, B=2...) - נחשב גימטריה לפי מיקום האות באלף-בית
+                    let gimatriaVal = charCode - 64;
+                    totalValue += gimatriaVal * (i + 1) * 1543;
+                }
+            }
+            return totalValue;
+        }
+
+       function triggerLicenseCheck() {
+    const key = document.getElementById('license-key-input').value.trim().toUpperCase();
+    
+    // רשימת קודים מוגדרים מראש שאתה יכול להמציא ולתת ללקוחות
+  const validKeys = [
+        "13091999",
+        "SF-BOSS-99",
+        "SF-CH-4821",
+        "SF-MONEY-2026",
+        "SF-VIP-770",
+        "SF-START-99",
+        "SF-PREMIUM-2026",
+        "SF-BUDGET-44",
+        "SF-TRACK-88",
+        "SF-FINANCE-101",
+        "SF-GOLD-999",
+        "SF-USER-5531",
+        "SF-SAVE-77",
+        "SF-SMART-10",
+        "SF-MASTER-2026",
+        "SF-ACTIVE-82",
+        "SF-PLAN-339",
+        "SF-CASH-710",
+        "SF-SECURE-99",
+        "SF-LICENSE-2026"
+    ];
+    
+    // בדיקה אם הקוד שהוזן נמצא ברשימה
+    if (validKeys.includes(key)) {
+        localStorage.setItem('sf_registered', 'true');
+        isRegistered = true;
+        applyRegistrationState();
+        alert('המערכת הופעלה בהצלחה! תודה על תמיכתך 🎉');
+        location.reload();
+    } else {
+        const input = document.getElementById('license-key-input');
+        input.classList.add('border-red-500', 'bg-red-50', 'animate-pulse');
+        input.value = '';
+        input.placeholder = 'מפתח שגוי — נסו שנית';
+        setTimeout(() => {
+            input.classList.remove('border-red-500', 'bg-red-50', 'animate-pulse');
+            input.placeholder = 'הכנס קוד כאן (אותיות ומספרים)';
+        }, 2000);
+    }
+}
+
+        // --- שאר הפונקציות המקוריות של האפליקציה מטפלות בקבצים וגרפים ---
+        document.getElementById('excel-files').addEventListener('change', async (e) => {
+            if (!isRegistered) return;
+            const files = Array.from(e.target.files);
+            let combined = [];
+            const datePattern = /^\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}$/;
+
+            for (const file of files) {
+                const arrayBuffer = await file.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer, { cellDates: true });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+
+                let colMapping = { date: 0, business: 1, amount: 3 }; 
+                const row4 = rawRows[3] || [];
+                
+                if (row4.some(cell => String(cell).includes("תאריך עסקה"))) {
+                    colMapping = {
+                        date: row4.findIndex(c => String(c).includes("תאריך עסקה")), 
+                        business: row4.findIndex(c => String(c).includes("שם בית העסק")), 
+                        amount: row4.findIndex(c => String(c).includes("סכום חיוב")) 
+                    };
+                }
+
+                let active = false;
+                for (let i = 0; i < rawRows.length; i++) {
+                    const row = rawRows[i];
+                    if (!row || row.length < 2) continue;
+                    
+                    const dateCell = row[colMapping.date];
+                    const isDate = (dateCell instanceof Date) || datePattern.test(String(dateCell).trim());
+
+                    if (isDate) {
+                        active = true;
+                        let dateStr = "";
+                        if (dateCell instanceof Date) {
+                            dateStr = `${dateCell.getDate()}/${dateCell.getMonth() + 1}/${dateCell.getFullYear()}`;
+                        } else {
+                            dateStr = String(dateCell).trim().replace(/-/g, '/');
+                        }
+                        
+                        const businessName = String(row[colMapping.business]).trim();
+                        const clean = (val) => {
+                            if (val === undefined || val === null || val === "") return NaN;
+                            return parseFloat(String(val).replace(/[^\d.-]/g, ''));
+                        };
+                        
+                        let amountVal = 0;
+                        if (colMapping.amount === 3) { 
+                            let valE = clean(row[4]); 
+                            let valD = clean(row[3]); 
+                            if (!isNaN(valE) && String(row[4]) !== "") amountVal = valE;
+                            else if (!isNaN(valD) && String(row[3]) !== "") amountVal = valD;
+                        } else { 
+                            amountVal = clean(row[colMapping.amount]);
+                        }
+
+                        if (!isNaN(amountVal) && amountVal !== 0) {
+                            combined.push({ date: dateStr, business: businessName, amount: amountVal });
+                        }
+                    } else if (active && i > 10 && row.length < 2) break; 
+                }
+            }
+            currentLoadedData = combined;
+            document.getElementById('dashboard-area').classList.remove('hidden');
+            updateDashboard();
+            renderTransactions();
+            renderBudgetSummaryTable();
+        });
+
+        function renderBudgetSummaryTable() {
+            const tbody = document.getElementById('budget-summary-table');
+            if(!tbody) return;
+            const actuals = {};
+            ALL_CATEGORIES.forEach(c => actuals[c] = 0);
+
+            currentLoadedData.forEach(item => {
+                let cat = merchantsMapping[item.business] || 'אחר';
+                if (!ALL_CATEGORIES.includes(cat)) cat = 'אחר';
+                actuals[cat] += item.amount;
+            });
+
+            fixedExpenses.forEach(item => {
+                let cat = item.category || 'אחר';
+                if (!ALL_CATEGORIES.includes(cat)) cat = 'אחר';
+                actuals[cat] += item.amount;
+            });
+
+            tbody.innerHTML = ALL_CATEGORIES.map(cat => {
+                const budget = budgetLimits[cat] || 0;
+                const actual = actuals[cat];
+                const diff = budget - actual;
+                const percent = budget > 0 ? Math.min((actual / budget) * 100, 100) : (actual > 0 ? 100 : 0);
+                const barColor = percent >= 100 ? 'bg-red-500' : (percent > 85 ? 'bg-yellow-400' : 'bg-green-500');
+
+                return `
+                    <tr class="hover:bg-gray-50">
+                        <td class="p-4 font-bold">${cat}</td>
+                        <td class="p-4 font-mono">${budget.toLocaleString()} ₪</td>
+                        <td class="p-4 font-mono font-bold">${actual.toLocaleString()} ₪</td>
+                        <td class="p-4 font-mono ${diff < 0 ? 'text-red-600' : 'text-green-600'}">${diff.toLocaleString()} ₪</td>
+                        <td class="p-4">
+                            <div class="w-full bg-gray-200 rounded-full h-2"><div class="${barColor} h-2 rounded-full" style="width: ${percent}%"></div></div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function updateDashboard() {
+            const tExcel = currentLoadedData.reduce((s, i) => s + i.amount, 0);
+            const tFixed = fixedExpenses.reduce((s, i) => s + i.amount, 0);
+            document.getElementById('total-sum-display').innerText = (tExcel + tFixed).toLocaleString() + ' ₪';
+            document.getElementById('total-rows-display').innerText = `${currentLoadedData.length} עסקאות`;
+            document.getElementById('total-fixed-display').innerText = `${fixedExpenses.length} קבועות`;
+
+            const stats = {};
+            currentLoadedData.forEach(i => { const c = merchantsMapping[i.business] || 'אחר'; stats[c] = (stats[c] || 0) + i.amount; });
+            fixedExpenses.forEach(i => { stats[i.category] = (stats[i.category] || 0) + i.amount; });
+
+            if (chartInstance) chartInstance.destroy();
+            
+            const canvas = document.getElementById('expensesChart');
+            if(!canvas) return;
+            
+            chartInstance = new Chart(canvas, {
+                type: 'doughnut',
+                data: { labels: Object.keys(stats), datasets: [{ data: Object.values(stats), backgroundColor: ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6'] }] },
+                options: { plugins: { legend: { position: 'right' } } }
+            });
+        }
+
+        function renderTransactions() {
+            const tbody = document.getElementById('data-table');
+            const guideRow = document.getElementById('guide-row');
+            if (currentLoadedData.length === 0) {
+                if (guideRow) guideRow.style.display = '';
+                return;
+            }
+            if (guideRow) guideRow.style.display = 'none';
+            tbody.innerHTML = currentLoadedData.map((item, idx) => {
+                const cat = merchantsMapping[item.business];
+                return `
+                <tr class="hover:bg-blue-50">
+                    <td class="p-4">${item.date}</td>
+                    <td class="p-4 font-bold">${item.business}</td>
+                    <td class="p-4"><span class="px-2 py-1 rounded-full text-xs font-bold ${cat ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}">${cat || 'ללא שיוך'}</span></td>
+                    <td class="p-4 font-bold text-left ${item.amount > 0 ? 'text-red-600' : 'text-green-600'}">${item.amount.toLocaleString()} ₪</td>
+                    <td class="p-4">${!cat ? `<button onclick="openMappingModal(${idx})" class="text-blue-600 font-bold">שייך קטגוריה</button>` : ''}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function renderBudgetInputs() {
+            const container = document.getElementById('budget-inputs-container');
+            if(!container) return;
+            container.innerHTML = ALL_CATEGORIES.map(cat => `
+                <div><label class="block text-xs font-bold mb-1">${cat}</label>
+                <input type="number" data-cat="${cat}" value="${budgetLimits[cat] || 0}" class="budget-input w-full p-2 border rounded text-center font-mono"></div>
+            `).join('');
+        }
+
+        function saveBudgets() {
+            if (!isRegistered) return;
+            document.querySelectorAll('.budget-input').forEach(i => budgetLimits[i.dataset.cat] = parseFloat(i.value) || 0);
+            localStorage.setItem('budget_limits_json', JSON.stringify(budgetLimits));
+            renderBudgetSummaryTable();
+            updateDashboard();
+            alert('התקציב נשמר בהצלחה');
+        }           
+
+        function addFixedExpense() {
+            if (!isRegistered) return;
+            const name = document.getElementById('fixed-name').value;
+            const amount = parseFloat(document.getElementById('fixed-amount').value);
+            const category = document.getElementById('fixed-category').value;
+            if (name && amount) {
+                fixedExpenses.push({ name, amount, category });
+                localStorage.setItem('fixed_expenses_json', JSON.stringify(fixedExpenses));
+                renderFixedExpensesTable(); renderSidebarFixedList(); updateDashboard(); renderBudgetSummaryTable();
+                document.getElementById('fixed-name').value = ''; document.getElementById('fixed-amount').value = '';
+            }
+        }
+
+        function renderFixedExpensesTable() {
+            const container = document.getElementById('fixed-management-list');
+            if(!container) return;
+            container.innerHTML = fixedExpenses.map((i, idx) => `
+                <tr class="border-b"><td class="p-2">${i.name}</td><td class="p-2">${i.category}</td><td class="p-2">${i.amount} ₪</td>
+                <td class="p-2"><button onclick="fixedExpenses.splice(${idx},1);localStorage.setItem('fixed_expenses_json',JSON.stringify(fixedExpenses));renderFixedExpensesTable();updateDashboard();renderBudgetSummaryTable();" class="text-red-500">🗑</button></td></tr>
+            `).join('');
+        }
+
+        function renderSidebarFixedList() {
+            const container = document.getElementById('sidebar-fixed-list');
+            if(!container) return;
+            container.innerHTML = fixedExpenses.map(i => `
+                <div class="flex justify-between border-b border-dashed py-1"><span><b>${i.name}</b> (${i.category})</span><span>${i.amount} ₪</span></div>
+            `).join('');
+        }
+
+        function openMappingModal(idx) { 
+            if (!isRegistered) return;
+            document.getElementById('cat-merchant-name').value = currentLoadedData[idx].business; 
+            document.getElementById('category-modal').classList.remove('hidden'); 
+        }
+        function closeModal() { document.getElementById('category-modal').classList.add('hidden'); }
+        
+        function saveMerchantMapping() {
+            if (!isRegistered) return;
+            merchantsMapping[document.getElementById('cat-merchant-name').value] = document.getElementById('cat-selection').value;
+            localStorage.setItem('merchants_json', JSON.stringify(merchantsMapping));
+            closeModal(); updateDashboard(); renderTransactions(); renderBudgetSummaryTable();
+        }
+
+        function renderMerchantsList() {
+            const container = document.getElementById('merchants-list');
+            if(!container) return;
+            container.innerHTML = Object.keys(merchantsMapping).map(name => `
+                <tr class="border-b"><td class="p-2 font-bold">${name}</td><td class="p-2">${merchantsMapping[name]}</td>
+                <td class="p-2"><button onclick="delete merchantsMapping['${name}'];localStorage.setItem('merchants_json',JSON.stringify(merchantsMapping));renderMerchantsList();updateDashboard();" class="text-red-400">מחק</button></td></tr>
+            `).join('');
+        }
+
+        init();
+    </script>
+</body>
+</html>
